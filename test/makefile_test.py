@@ -13,7 +13,7 @@ def test_desktop_targets():
         commands.mkdir()
         for name, body in {
             'uname': 'echo "$MOCK_OS"',
-            'flutter': 'printf "<%s>\\n" "$@"\nexit "${MOCK_EXIT:-0}"',
+            'flutter': 'if [[ "$*" == *linux* ]]; then test ! -e build/linux/x64/release/CMakeCache.txt || exit 1; fi\nprintf "<%s>\\n" "$@"\nexit "${MOCK_EXIT:-0}"',
         }.items():
             command = commands / name
             command.write_text('#!/usr/bin/env bash\n' + body + '\n')
@@ -27,6 +27,14 @@ def test_desktop_targets():
                 ('Darwin', 'linux', 'linux'), ('Darwin', 'invalid', None),
             ]
         ]:
+            caches = [root / f'build/linux/{path}/CMakeCache.txt' for path in [
+                'x64/debug', 'x64/release', 'arm64/profile',
+            ]]
+            for cache in caches:
+                cache.parent.mkdir(parents=True, exist_ok=True)
+                cache.write_text('mpv_INCLUDEDIR:INTERNAL=/tmp/kuraku-linux-deps/root/usr/include\n')
+            artifact = caches[1].with_name('keep.o')
+            artifact.write_text('keep')
             result = subprocess.run(
                 ['make', '--no-print-directory', '-C', str(root), goal, f'TARGET={override}',
                  'ARGS=--release --dart-define="LABEL=hello world"'],
@@ -34,6 +42,8 @@ def test_desktop_targets():
                 capture_output=True, text=True,
             )
             assert (result.returncode == 0) == (target is not None), result.stderr
+            assert all(cache.exists() == (target != 'linux') for cache in caches)
+            assert artifact.read_text() == 'keep'
             if target:
                 command = f'<run>\n<-d>\n<{target}>\n' if goal == 'run' else (
                     f'<build>\n<{target}>\n<--release>\n')
@@ -110,6 +120,7 @@ def test_install():
             'date': 'echo 20261008',
             'flutter': '''
 if [ "$1" = build ]; then
+  if [ "$2" = linux ]; then test ! -e build/linux/x64/release/CMakeCache.txt; fi
   echo "$*" >> "$CALL_LOG"
   [ "$SCENARIO" != build_failure ] || exit 1
   if [ "$SCENARIO" != missing_bundle ]; then
@@ -170,6 +181,9 @@ mkdir -p "$2"
         (root / 'tool').mkdir()
         (root / 'tool/package_linux.sh').write_text('echo "package $1" >> "$CALL_LOG"\n')
         (root / 'pubspec.yaml').write_text('name: kuraku\nversion: 1.0.0+1\n')
+        cache = root / 'build/linux/x64/release/CMakeCache.txt'
+        cache.parent.mkdir(parents=True)
+        cache.write_text('mpv_INCLUDEDIR:INTERNAL=/tmp/kuraku-linux-deps/root/usr/include\n')
         log.write_text('')
         result = subprocess.run(
             ['make', '--no-print-directory', '-C', str(root), 'install', 'TARGET=linux'],
@@ -178,6 +192,7 @@ mkdir -p "$2"
             capture_output=True, text=True,
         )
         assert result.returncode == 0, result.stderr
+        assert not cache.exists()
         assert 'build linux --release' in log.read_text()
         assert 'package 1.0.0+20261008.1' in log.read_text()
 

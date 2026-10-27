@@ -49,6 +49,7 @@ run build:
 		macos|linux|windows) ;; \
 		*) echo 'Invalid TARGET: use auto, macos, linux, or windows' >&2; exit 1 ;; \
 	esac; \
+	if [ "$$target" = linux ]; then rm -f build/linux/*/*/CMakeCache.txt; fi; \
 	if [ '$@' = run ]; then \
 		exec flutter run -d "$$target" $(ARGS); \
 	else \
@@ -107,6 +108,7 @@ install: ## Build and install (macOS) or package (Linux/Windows), then save the 
 	log 'Refresh dependencies'; \
 	flutter pub get; \
 	log "Build KuraKu for $$resolved_target"; \
+	if [ "$$resolved_target" = linux ]; then rm -f build/linux/*/*/CMakeCache.txt; fi; \
 	flutter build "$$resolved_target" --release --build-name="$$base_version" --build-number="$$build_number"; \
 	case "$$resolved_target" in \
 		macos) \
